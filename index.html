@@ -1,0 +1,1273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AutoTube v2 — AI Video Engine</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Bebas+Neue&family=Barlow:wght@300;400;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg: #06060a;
+      --panel: #0e0e16;
+      --card: #13131d;
+      --border: #222234;
+      --border2: #2e2e48;
+      --red: #e63946;
+      --orange: #f4a261;
+      --green: #06d6a0;
+      --blue: #4cc9f0;
+      --text: #dde1f0;
+      --muted: #565878;
+      --glow-r: rgba(230,57,70,0.12);
+      --glow-b: rgba(76,201,240,0.08);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Barlow', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Scanline texture */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px);
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* Noise overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      opacity: 0.4;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── LAYOUT ── */
+    .app {
+      display: grid;
+      grid-template-columns: 260px 1fr 340px;
+      grid-template-rows: 60px 1fr;
+      min-height: 100vh;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── TOPBAR ── */
+    .topbar {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      gap: 16px;
+    }
+
+    .logo {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 22px;
+      letter-spacing: 3px;
+      color: var(--red);
+      line-height: 1;
+    }
+
+    .logo span { color: var(--text); }
+
+    .version-badge {
+      background: var(--card);
+      border: 1px solid var(--border2);
+      border-radius: 4px;
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      padding: 3px 8px;
+      color: var(--muted);
+      letter-spacing: 1px;
+    }
+
+    .topbar-status {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .status-dot {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+
+    .dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); animation: blink 2s infinite; }
+    .dot.offline { background: var(--red); }
+
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 20px 0;
+      overflow-y: auto;
+    }
+
+    .sidebar-section {
+      padding: 0 16px 16px;
+    }
+
+    .sidebar-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 12px 16px 8px;
+      display: block;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--muted);
+      transition: all 0.2s;
+      border: 1px solid transparent;
+    }
+
+    .nav-item:hover { background: var(--card); color: var(--text); }
+    .nav-item.active {
+      background: var(--glow-r);
+      color: var(--red);
+      border-color: rgba(230,57,70,0.25);
+      font-weight: 600;
+    }
+
+    .nav-icon { font-size: 14px; min-width: 18px; }
+
+    /* API config inputs in sidebar */
+    .api-input {
+      width: 100%;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      outline: none;
+      margin-bottom: 8px;
+      transition: border-color 0.2s;
+    }
+
+    .api-input:focus { border-color: var(--blue); }
+    .api-input::placeholder { color: var(--muted); }
+
+    .api-label {
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+      display: block;
+      font-family: 'DM Mono', monospace;
+    }
+
+    .btn-save-config {
+      width: 100%;
+      padding: 8px;
+      background: var(--card);
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      color: var(--green);
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-save-config:hover { background: rgba(6,214,160,0.1); border-color: var(--green); }
+
+    /* ── MAIN ── */
+    .main {
+      overflow-y: auto;
+      padding: 24px;
+      background: var(--bg);
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Form card */
+    .fcard {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+      transition: border-color 0.3s;
+    }
+
+    .fcard:hover { border-color: var(--border2); }
+
+    .fcard-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 14px;
+      letter-spacing: 2px;
+      color: var(--muted);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .fcard-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    label {
+      display: block;
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+
+    input[type="text"], textarea, select {
+      width: 100%;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 10px 13px;
+      color: var(--text);
+      font-family: 'Barlow', sans-serif;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      resize: vertical;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(76,201,240,0.08);
+    }
+
+    textarea { min-height: 90px; }
+    select option { background: var(--panel); }
+
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+    .form-group { margin-bottom: 14px; }
+
+    /* Toggles */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle-label { font-size: 13px; color: var(--text); }
+    .toggle-desc  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    .toggle {
+      position: relative;
+      width: 36px; height: 20px;
+      flex-shrink: 0;
+    }
+
+    .toggle input { opacity: 0; width: 0; height: 0; }
+
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: var(--border2);
+      border-radius: 20px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 14px; height: 14px;
+      left: 3px; top: 3px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: all 0.3s;
+    }
+
+    .toggle input:checked + .toggle-slider { background: var(--red); }
+    .toggle input:checked + .toggle-slider::before {
+      transform: translateX(16px);
+      background: white;
+    }
+
+    /* Slider */
+    .range-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .range-row label { margin: 0; white-space: nowrap; }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      flex: 1;
+      height: 3px;
+      background: var(--border2);
+      border-radius: 99px;
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--blue);
+      cursor: pointer;
+    }
+
+    .range-val {
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      color: var(--blue);
+      min-width: 36px;
+      text-align: right;
+    }
+
+    /* Image upload */
+    .upload-zone {
+      border: 2px dashed var(--border2);
+      border-radius: 10px;
+      padding: 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .upload-zone:hover, .upload-zone.drag { border-color: var(--red); background: var(--glow-r); }
+    .upload-zone input { display: none; }
+
+    .upload-text { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .upload-text strong { color: var(--orange); }
+
+    #imgPreview { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    #imgPreview img { width: 70px; height: 52px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); }
+
+    /* Auto images badge */
+    .auto-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(76,201,240,0.1);
+      border: 1px solid rgba(76,201,240,0.25);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: var(--blue);
+      margin-top: 10px;
+    }
+
+    /* Generate button */
+    .btn-generate {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, var(--red), #c1121f);
+      border: none;
+      border-radius: 10px;
+      color: white;
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 18px;
+      letter-spacing: 3px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 10px;
+    }
+
+    .btn-generate:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(230,57,70,0.35); }
+    .btn-generate:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    .btn-sm {
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border2);
+      background: var(--card);
+      color: var(--text);
+      font-family: 'Barlow', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-sm:hover { border-color: var(--blue); color: var(--blue); }
+    .btn-sm.green { color: var(--green); }
+    .btn-sm.green:hover { border-color: var(--green); background: rgba(6,214,160,0.08); }
+    .btn-sm:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── RIGHT PANEL ── */
+    .right-panel {
+      background: var(--panel);
+      border-left: 1px solid var(--border);
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .panel-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 13px;
+      letter-spacing: 2px;
+      color: var(--muted);
+    }
+
+    /* Pipeline steps */
+    .pipe-step {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      transition: all 0.35s;
+    }
+
+    .pipe-step.running { border-color: var(--orange); background: rgba(244,162,97,0.07); }
+    .pipe-step.done    { border-color: var(--green);  background: rgba(6,214,160,0.06); }
+    .pipe-step.error   { border-color: var(--red);    background: rgba(230,57,70,0.07); }
+
+    .pipe-icon { font-size: 16px; min-width: 20px; text-align: center; }
+
+    .pipe-info { flex: 1; }
+    .pipe-name { font-size: 11px; font-weight: 600; letter-spacing: 0.5px; }
+    .pipe-msg  { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+    .pipe-badge {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 500;
+      letter-spacing: 1px;
+    }
+
+    .b-wait { background: var(--border); color: var(--muted); }
+    .b-run  { background: rgba(244,162,97,0.2); color: var(--orange); }
+    .b-done { background: rgba(6,214,160,0.15); color: var(--green); }
+    .b-err  { background: rgba(230,57,70,0.15); color: var(--red); }
+
+    .spinner {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border: 1.5px solid transparent;
+      border-top-color: var(--orange);
+      border-radius: 50%;
+      animation: spin 0.5s linear infinite;
+      margin-right: 3px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Terminal log */
+    .log-term {
+      background: #04040a;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      line-height: 1.9;
+      color: #6a6a8a;
+      max-height: 180px;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+
+    .log-line { display: block; }
+    .l-info    { color: var(--blue); }
+    .l-ok      { color: var(--green); }
+    .l-warn    { color: var(--orange); }
+    .l-err     { color: var(--red); }
+
+    /* Result */
+    .result-box {
+      background: linear-gradient(135deg, rgba(6,214,160,0.07), rgba(76,201,240,0.05));
+      border: 1px solid rgba(6,214,160,0.3);
+      border-radius: 10px;
+      padding: 18px;
+      text-align: center;
+    }
+
+    .result-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 18px;
+      letter-spacing: 2px;
+      color: var(--green);
+      margin-bottom: 8px;
+    }
+
+    .result-file {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      background: var(--card);
+      padding: 6px 10px;
+      border-radius: 5px;
+      display: inline-block;
+      margin: 6px 0 12px;
+      word-break: break-all;
+    }
+
+    /* Batch */
+    .batch-textarea {
+      width: 100%;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 10px 13px;
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      outline: none;
+      resize: vertical;
+      min-height: 150px;
+    }
+
+    .batch-job {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    .batch-job.done  { border-color: var(--green); }
+    .batch-job.error { border-color: var(--red); }
+    .batch-job.running { border-color: var(--orange); }
+
+    /* Videos list */
+    .video-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+
+    .video-name { color: var(--text); font-weight: 600; }
+    .video-size { color: var(--muted); font-family: 'DM Mono', monospace; font-size: 10px; }
+    .video-upload-btn {
+      padding: 5px 12px;
+      background: rgba(6,214,160,0.1);
+      border: 1px solid rgba(6,214,160,0.3);
+      border-radius: 5px;
+      color: var(--green);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .video-upload-btn:hover { background: rgba(6,214,160,0.2); }
+
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; grid-template-rows: 60px auto 1fr; }
+      .sidebar { display: none; }
+      .right-panel { border-left: none; border-top: 1px solid var(--border); }
+      .form-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="logo">AUTO<span>TUBE</span></div>
+    <div class="version-badge">v2.0</div>
+    <div class="topbar-status">
+      <div class="status-dot">
+        <div class="dot" id="serverDot"></div>
+        <span id="serverLabel">checking...</span>
+      </div>
+      <div class="status-dot">
+        <div class="dot" id="ffmpegDot"></div>
+        <span id="ffmpegLabel">FFmpeg</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- SIDEBAR -->
+  <nav class="sidebar">
+    <span class="sidebar-label">Navigation</span>
+    <div class="nav-item active" data-tab="generate" onclick="switchTab('generate',this)">
+      <span class="nav-icon">🎬</span> Generate
+    </div>
+    <div class="nav-item" data-tab="batch" onclick="switchTab('batch',this)">
+      <span class="nav-icon">📦</span> Batch
+    </div>
+    <div class="nav-item" data-tab="library" onclick="switchTab('library',this)">
+      <span class="nav-icon">🗂️</span> Library
+    </div>
+
+    <span class="sidebar-label">API Keys</span>
+    <div class="sidebar-section">
+      <label class="api-label">Anthropic Key</label>
+      <input class="api-input" type="password" id="cfgAnthropic" placeholder="sk-ant-..." />
+      <label class="api-label">OpenAI Key</label>
+      <input class="api-input" type="password" id="cfgOpenai" placeholder="sk-..." />
+      <label class="api-label">Pexels Key</label>
+      <input class="api-input" type="password" id="cfgPexels" placeholder="Pexels API key" />
+      <button class="btn-save-config" onclick="saveConfig()">✓ Save Keys</button>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTENT -->
+  <main class="main">
+
+    <!-- TAB: Generate -->
+    <div class="tab-panel active" id="tab-generate">
+
+      <!-- Topic -->
+      <div class="fcard">
+        <div class="fcard-title">📝 Topic &amp; Script</div>
+
+        <div class="form-group">
+          <label>Video Topic *</label>
+          <input type="text" id="topic" placeholder="e.g. 5 Incredible Facts About Black Holes"/>
+        </div>
+
+        <div class="form-group">
+          <label>Script (leave blank to auto-generate with AI)</label>
+          <textarea id="script" placeholder="Write your narration here, OR leave blank — AI will generate it from your topic..."></textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Video Title (optional)</label>
+            <input type="text" id="vtitle" placeholder="Auto-generated if blank"/>
+          </div>
+          <div class="form-group">
+            <label>Tags</label>
+            <input type="text" id="tags" placeholder="space, facts, science"/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="description" placeholder="Auto-generated if blank..." style="min-height:60px"></textarea>
+        </div>
+      </div>
+
+      <!-- Images -->
+      <div class="fcard">
+        <div class="fcard-title">🖼️ Images</div>
+
+        <div class="toggle-row" style="margin-bottom:12px">
+          <div>
+            <div class="toggle-label">Auto-fetch from Pexels</div>
+            <div class="toggle-desc">Automatically downloads images for your topic</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="autoImages" checked onchange="toggleAutoImages()"/>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div id="autoImgSettings">
+          <div class="range-row">
+            <label>Image count</label>
+            <input type="range" id="imgCount" min="3" max="15" value="6"
+              oninput="document.getElementById('imgCountVal').textContent=this.value"/>
+            <span class="range-val" id="imgCountVal">6</span>
+          </div>
+          <div class="auto-badge">
+            🔵 Images will be automatically fetched from Pexels based on your topic
+          </div>
+        </div>
+
+        <div id="manualImgSettings" style="display:none">
+          <div class="upload-zone" id="dropZone" onclick="document.getElementById('imgInput').click()">
+            <input type="file" id="imgInput" accept="image/*" multiple/>
+            <div style="font-size:28px">📁</div>
+            <div class="upload-text"><strong>Click or drop</strong> images here</div>
+          </div>
+          <div id="imgPreview"></div>
+        </div>
+      </div>
+
+      <!-- Settings -->
+      <div class="fcard">
+        <div class="fcard-title">⚙️ Settings</div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Resolution</label>
+            <select id="resolution">
+              <option value="1920x1080">1920×1080 Full HD</option>
+              <option value="1280x720">1280×720 HD</option>
+              <option value="854x480">854×480 SD</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Privacy</label>
+            <select id="privacy">
+              <option value="private">Private (safe testing)</option>
+              <option value="unlisted">Unlisted</option>
+              <option value="public">Public</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="range-row">
+          <label>Voice Speed</label>
+          <input type="range" id="voiceSpeed" min="0.8" max="1.5" step="0.1" value="1.0"
+            oninput="document.getElementById('speedVal').textContent=this.value+'×'"/>
+          <span class="range-val" id="speedVal">1.0×</span>
+        </div>
+
+        <div class="range-row">
+          <label>Secs / image (0 = auto)</label>
+          <input type="range" id="imgDuration" min="0" max="10" value="0"
+            oninput="document.getElementById('durVal').textContent=this.value==0?'auto':this.value+'s'"/>
+          <span class="range-val" id="durVal">auto</span>
+        </div>
+
+        <div style="margin-top:12px">
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Burn Subtitles</div>
+              <div class="toggle-desc">Auto-generate and overlay SRT captions</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="useSubs" checked/>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Auto Thumbnail</div>
+              <div class="toggle-desc">Generate YouTube thumbnail with title</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="useThumb" checked/>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <button class="btn-generate" id="btnGen" onclick="runPipeline()">
+        ▶ GENERATE VIDEO
+      </button>
+
+      <div class="btn-row">
+        <button class="btn-sm green" id="btnUpload" onclick="uploadVideo()" disabled>▲ Upload to YouTube</button>
+        <button class="btn-sm" onclick="resetForm()">↺ Reset</button>
+      </div>
+    </div>
+
+    <!-- TAB: Batch -->
+    <div class="tab-panel" id="tab-batch">
+      <div class="fcard">
+        <div class="fcard-title">📦 Batch Generator</div>
+        <div class="form-group">
+          <label>Topics (one per line)</label>
+          <textarea class="batch-textarea" id="batchTopics" placeholder="5 Facts About Mars&#10;History of Ancient Egypt&#10;Deep Ocean Mysteries&#10;How Black Holes Form&#10;Amazing Animal Migrations"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Resolution</label>
+            <select id="batchRes">
+              <option value="1280x720">HD 720p (faster)</option>
+              <option value="1920x1080">Full HD 1080p</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Privacy</label>
+            <select id="batchPrivacy">
+              <option value="private">Private</option>
+              <option value="unlisted">Unlisted</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn-generate" onclick="startBatch()">▶ START BATCH</button>
+      </div>
+
+      <div class="fcard" id="batchStatusCard" style="display:none">
+        <div class="fcard-title">📊 Batch Status</div>
+        <div id="batchJobList"></div>
+      </div>
+    </div>
+
+    <!-- TAB: Library -->
+    <div class="tab-panel" id="tab-library">
+      <div class="fcard">
+        <div class="fcard-title">🗂️ Generated Videos</div>
+        <button class="btn-sm" onclick="loadLibrary()" style="margin-bottom:12px">↻ Refresh</button>
+        <div id="videoList"></div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- RIGHT PANEL: Pipeline Status -->
+  <aside class="right-panel">
+    <div class="panel-title">⚡ Pipeline</div>
+
+    <div id="pipeSteps">
+      <div class="pipe-step" id="ps-script">
+        <span class="pipe-icon">🤖</span>
+        <div class="pipe-info">
+          <div class="pipe-name">AI Script</div>
+          <div class="pipe-msg" id="ps-script-msg">Waiting</div>
+        </div>
+        <span class="pipe-badge b-wait" id="ps-script-b">WAIT</span>
+      </div>
+      <div class="pipe-step" id="ps-images">
+        <span class="pipe-icon">🖼️</span>
+        <div class="pipe-info">
+          <div class="pipe-name">Images</div>
+          <div class="pipe-msg" id="ps-images-msg">Waiting</div>
+        </div>
+        <span class="pipe-badge b-wait" id="ps-images-b">WAIT</span>
+      </div>
+      <div class="pipe-step" id="ps-voice">
+        <span class="pipe-icon">🎙️</span>
+        <div class="pipe-info">
+          <div class="pipe-name">Voice (gTTS)</div>
+          <div class="pipe-msg" id="ps-voice-msg">Waiting</div>
+        </div>
+        <span class="pipe-badge b-wait" id="ps-voice-b">WAIT</span>
+      </div>
+      <div class="pipe-step" id="ps-subs">
+        <span class="pipe-icon">💬</span>
+        <div class="pipe-info">
+          <div class="pipe-name">Subtitles</div>
+          <div class="pipe-msg" id="ps-subs-msg">Waiting</div>
+        </div>
+        <span class="pipe-badge b-wait" id="ps-subs-b">WAIT</span>
+      </div>
+      <div class="pipe-step" id="ps-video">
+        <span class="pipe-icon">🎬</span>
+        <div class="pipe-info">
+          <div class="pipe-name">FFmpeg Video</div>
+          <div class="pipe-msg" id="ps-video-msg">Waiting</div>
+        </div>
+        <span class="pipe-badge b-wait" id="ps-video-b">WAIT</span>
+      </div>
+      <div class="pipe-step" id="ps-thumb">
+        <span class="pipe-icon">🖼️</span>
+        <div class="pipe-info">
+          <div class="pipe-name">Thumbnail</div>
+          <div class="pipe-msg" id="ps-thumb-msg">Waiting</div>
+        </div>
+        <span class="pipe-badge b-wait" id="ps-thumb-b">WAIT</span>
+      </div>
+    </div>
+
+    <!-- Result -->
+    <div id="resultBox" style="display:none" class="result-box">
+      <div class="result-title">✅ DONE</div>
+      <div id="resultFile" class="result-file"></div>
+      <div id="resultMeta" style="font-size:11px;color:var(--muted);margin-bottom:10px"></div>
+      <button class="btn-sm green" style="width:100%" onclick="uploadVideo()">▲ Upload to YouTube</button>
+    </div>
+
+    <!-- Log -->
+    <div class="panel-title">📟 Log</div>
+    <div class="log-term" id="logTerm"></div>
+  </aside>
+
+</div>
+
+<script>
+const API = 'http://127.0.0.1:5000';
+let lastResult = null;
+let uploadedImages = [];
+let batchPoll = null;
+
+// ── Server status ─────────────────────────────────────────────────────────────
+async function checkServer() {
+  try {
+    const r = await fetch(`${API}/status`, { signal: AbortSignal.timeout(2000) });
+    const d = await r.json();
+    document.getElementById('serverDot').className = 'dot online';
+    document.getElementById('serverLabel').textContent = 'Server online';
+    if (d.ffmpeg) {
+      document.getElementById('ffmpegDot').className = 'dot online';
+      document.getElementById('ffmpegLabel').textContent = 'FFmpeg ✓';
+    } else {
+      document.getElementById('ffmpegDot').className = 'dot offline';
+      document.getElementById('ffmpegLabel').textContent = 'FFmpeg missing';
+    }
+  } catch {
+    document.getElementById('serverDot').className = 'dot offline';
+    document.getElementById('serverLabel').textContent = 'Server offline';
+  }
+}
+checkServer();
+setInterval(checkServer, 10000);
+
+// ── Tab navigation ────────────────────────────────────────────────────────────
+function switchTab(id, el) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  el.classList.add('active');
+  if (id === 'library') loadLibrary();
+}
+
+// ── Pipeline badge helper ─────────────────────────────────────────────────────
+function ps(id, status, msg) {
+  const step  = document.getElementById('ps-' + id);
+  const badge = document.getElementById('ps-' + id + '-b');
+  const msgEl = document.getElementById('ps-' + id + '-msg');
+  step.className = 'pipe-step ' + status;
+  msgEl.textContent = msg;
+  const map = {
+    waiting: { cls: 'b-wait', html: 'WAIT' },
+    running: { cls: 'b-run',  html: '<span class="spinner"></span>RUN' },
+    done:    { cls: 'b-done', html: 'DONE' },
+    error:   { cls: 'b-err',  html: 'ERR'  }
+  };
+  const e = map[status] || map.waiting;
+  badge.className = 'pipe-badge ' + e.cls;
+  badge.innerHTML = e.html;
+}
+
+// ── Log ───────────────────────────────────────────────────────────────────────
+function log(msg, type = 'info') {
+  const box  = document.getElementById('logTerm');
+  const line = document.createElement('span');
+  line.className = 'log-line l-' + type;
+  const t = new Date().toLocaleTimeString('en', {hour12:false});
+  line.textContent = `[${t}] ${msg}`;
+  box.appendChild(line);
+  box.appendChild(document.createElement('br'));
+  box.scrollTop = box.scrollHeight;
+}
+
+// ── Image upload ──────────────────────────────────────────────────────────────
+document.getElementById('imgInput').addEventListener('change', e => addImages(e.target.files));
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); addImages(e.dataTransfer.files); });
+
+function addImages(files) {
+  [...files].forEach(f => {
+    if (!f.type.startsWith('image/')) return;
+    const r = new FileReader();
+    r.onload = e => {
+      const img = document.createElement('img');
+      img.src = e.target.result;
+      document.getElementById('imgPreview').appendChild(img);
+    };
+    r.readAsDataURL(f);
+    uploadedImages.push(f);
+  });
+}
+
+function toggleAutoImages() {
+  const auto = document.getElementById('autoImages').checked;
+  document.getElementById('autoImgSettings').style.display  = auto ? '' : 'none';
+  document.getElementById('manualImgSettings').style.display = auto ? 'none' : '';
+}
+
+// ── Config save ───────────────────────────────────────────────────────────────
+async function saveConfig() {
+  const cfg = {
+    anthropic_key: document.getElementById('cfgAnthropic').value.trim(),
+    openai_key:    document.getElementById('cfgOpenai').value.trim(),
+    pexels_key:    document.getElementById('cfgPexels').value.trim(),
+  };
+  try {
+    await fetch(`${API}/config`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(cfg) });
+    log('API keys saved', 'ok');
+  } catch(e) {
+    log('Could not save config: ' + e.message, 'err');
+  }
+}
+
+// ── Main pipeline ─────────────────────────────────────────────────────────────
+async function runPipeline() {
+  const topic = document.getElementById('topic').value.trim();
+  if (!topic) { alert('Please enter a topic.'); return; }
+
+  const autoImg = document.getElementById('autoImages').checked;
+  if (!autoImg && uploadedImages.length === 0) {
+    alert('Please upload at least one image, or enable auto-fetch.');
+    return;
+  }
+
+  document.getElementById('btnGen').disabled = true;
+  document.getElementById('btnUpload').disabled = true;
+  document.getElementById('resultBox').style.display = 'none';
+  document.getElementById('logTerm').innerHTML = '';
+  lastResult = null;
+
+  // Reset all steps
+  ['script','images','voice','subs','video','thumb'].forEach(id => ps(id, 'waiting', 'Waiting'));
+
+  log('Pipeline started: ' + topic, 'info');
+
+  // Step indicators (UI only — real work done server-side)
+  ps('script', 'running', autoImg && !document.getElementById('script').value.trim() ? 'AI generating script...' : 'Using provided script');
+  await delay(300);
+
+  try {
+    let result;
+    if (!autoImg) {
+      // Multipart form upload
+      const fd = new FormData();
+      fd.append('topic',       topic);
+      fd.append('script',      document.getElementById('script').value.trim());
+      fd.append('title',       document.getElementById('vtitle').value.trim());
+      fd.append('description', document.getElementById('description').value.trim());
+      fd.append('tags',        document.getElementById('tags').value.trim());
+      fd.append('resolution',  document.getElementById('resolution').value);
+      fd.append('privacy',     document.getElementById('privacy').value);
+      fd.append('voice_speed', document.getElementById('voiceSpeed').value);
+      fd.append('img_duration',document.getElementById('imgDuration').value);
+      fd.append('use_subtitles', document.getElementById('useSubs').checked ? '1' : '0');
+      fd.append('use_thumbnail', document.getElementById('useThumb').checked ? '1' : '0');
+      uploadedImages.forEach(f => fd.append('images', f));
+
+      ps('images', 'running', `Uploading ${uploadedImages.length} images...`);
+      await delay(200);
+      ps('voice', 'running', 'Generating narration...');
+
+      const r = await fetch(`${API}/generate`, { method: 'POST', body: fd });
+      result = await r.json();
+    } else {
+      // JSON request with auto-images
+      ps('images', 'running', 'Fetching from Pexels...');
+      await delay(200);
+      ps('voice', 'running', 'Generating narration...');
+
+      const r = await fetch(`${API}/generate`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          topic,
+          script:       document.getElementById('script').value.trim(),
+          title:        document.getElementById('vtitle').value.trim(),
+          description:  document.getElementById('description').value.trim(),
+          tags:         document.getElementById('tags').value.trim(),
+          resolution:   document.getElementById('resolution').value,
+          privacy:      document.getElementById('privacy').value,
+          voice_speed:  parseFloat(document.getElementById('voiceSpeed').value),
+          img_duration: parseInt(document.getElementById('imgDuration').value),
+          img_count:    parseInt(document.getElementById('imgCount').value),
+          use_subtitles: document.getElementById('useSubs').checked,
+          use_thumbnail: document.getElementById('useThumb').checked,
+        })
+      });
+      result = await r.json();
+    }
+
+    if (!result.success) throw new Error(result.error || 'Pipeline failed');
+
+    // Update steps from result
+    ps('script', 'done', 'Script ready ✓');
+    ps('images', 'done', `${result.images_used} images used ✓`);
+    ps('voice',  'done', `${result.audio_duration}s audio ✓`);
+    ps('subs',   result.srt_path  ? 'done' : 'done', result.srt_path  ? 'SRT generated ✓' : 'Skipped');
+    ps('video',  'done', result.video_file + ' ✓');
+    ps('thumb',  result.thumb_path ? 'done' : 'done', result.thumb_path ? 'Thumbnail ready ✓' : 'Skipped');
+
+    log('Video: ' + result.video_file, 'ok');
+    log('Audio: ' + result.audio_duration + 's', 'ok');
+    log('Images: ' + result.images_used, 'ok');
+    if (result.srt_path)  log('Subtitles: ' + result.srt_path, 'ok');
+    if (result.thumb_path) log('Thumbnail: ' + result.thumb_path, 'ok');
+    log('Pipeline complete!', 'ok');
+
+    lastResult = result;
+
+    document.getElementById('resultBox').style.display = '';
+    document.getElementById('resultFile').textContent  = '📁 ' + result.video_file;
+    document.getElementById('resultMeta').textContent  =
+      `${result.audio_duration}s · ${result.images_used} images · ${result.resolution || ''}`;
+    document.getElementById('btnUpload').disabled = false;
+
+  } catch(e) {
+    ['script','images','voice','subs','video','thumb'].forEach(id => {
+      const el = document.getElementById('ps-' + id + '-b');
+      if (el && el.textContent === 'RUN') ps(id, 'error', e.message);
+    });
+    ps('video', 'error', e.message);
+    log('ERROR: ' + e.message, 'err');
+    log('Make sure Flask is running: python backend/app.py', 'warn');
+  }
+
+  document.getElementById('btnGen').disabled = false;
+}
+
+// ── YouTube Upload ────────────────────────────────────────────────────────────
+async function uploadVideo(videoPath, title, description, tags, privacy, thumbPath) {
+  const vp    = videoPath || lastResult?.video_path;
+  const ttl   = title       || lastResult?.title || document.getElementById('vtitle').value || document.getElementById('topic').value;
+  const desc  = description || lastResult?.description || document.getElementById('description').value;
+  const tgs   = tags        || (lastResult?.tags || document.getElementById('tags').value.split(',').map(t=>t.trim()));
+  const priv  = privacy     || document.getElementById('privacy').value;
+  const thumb = thumbPath   || lastResult?.thumb_path;
+
+  if (!vp) { alert('No video to upload. Generate first!'); return; }
+  log('Uploading to YouTube...', 'info');
+
+  try {
+    const r = await fetch(`${API}/upload`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ video_path: vp, title: ttl, description: desc, tags: tgs, privacy: priv, thumb_path: thumb })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    log('Uploaded! → https://youtu.be/' + d.video_id, 'ok');
+    alert('✅ Uploaded!\nhttps://youtu.be/' + d.video_id);
+  } catch(e) {
+    log('Upload error: ' + e.message, 'err');
+    alert('Upload failed:\n' + e.message + '\n\nCheck client_secrets.json in project root.');
+  }
+}
+
+// ── Batch ─────────────────────────────────────────────────────────────────────
+async function startBatch() {
+  const raw    = document.getElementById('batchTopics').value.trim();
+  const topics = raw.split('\n').map(t=>t.trim()).filter(Boolean);
+  if (!topics.length) { alert('Enter at least one topic.'); return; }
+
+  log(`Starting batch: ${topics.length} videos`, 'info');
+  document.getElementById('batchStatusCard').style.display = '';
+
+  try {
+    await fetch(`${API}/batch/start`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        topics,
+        resolution: document.getElementById('batchRes').value,
+        privacy:    document.getElementById('batchPrivacy').value,
+        use_subtitles: true,
+        use_thumbnail: true,
+      })
+    });
+    log('Batch started!', 'ok');
+    if (batchPoll) clearInterval(batchPoll);
+    batchPoll = setInterval(pollBatch, 3000);
+  } catch(e) {
+    log('Batch error: ' + e.message, 'err');
+  }
+}
+
+async function pollBatch() {
+  try {
+    const r = await fetch(`${API}/batch/status`);
+    const d = await r.json();
+    renderBatchJobs(d.jobs);
+    if (!d.running) {
+      clearInterval(batchPoll);
+      log(`Batch complete: ${d.jobs.filter(j=>j.success).length}/${d.total} succeeded`, 'ok');
+    }
+  } catch {}
+}
+
+function renderBatchJobs(jobs) {
+  const list = document.getElementById('batchJobList');
+  list.innerHTML = '';
+  jobs.forEach((j, i) => {
+    const div = document.createElement('div');
+    const cls = j.success ? 'done' : j.error ? 'error' : 'running';
+    div.className = 'batch-job ' + cls;
+    div.innerHTML = `
+      <span>${i + 1}</span>
+      <span style="flex:1;font-weight:600">${j.topic || '...'}</span>
+      <span style="font-size:10px;color:var(--muted)">${j.success ? '✅ ' + (j.video_file || '') : j.error ? '❌ ' + j.error.slice(0,40) : '⏳'}</span>
+    `;
+    list.appendChild(div);
+  });
+}
+
+// ── Library ───────────────────────────────────────────────────────────────────
+async function loadLibrary() {
+  try {
+    const r = await fetch(`${API}/videos`);
+    const videos = await r.json();
+    const list = document.getElementById('videoList');
+    if (!videos.length) { list.innerHTML = '<p style="color:var(--muted);font-size:12px">No videos yet.</p>'; return; }
+    list.innerHTML = '';
+    videos.forEach(v => {
+      const div = document.createElement('div');
+      div.className = 'video-item';
+      div.innerHTML = `
+        <div>
+          <div class="video-name">${v.name}</div>
+          <div class="video-size">${v.size_mb} MB</div>
+        </div>
+        <button class="video-upload-btn" onclick="uploadVideo('${v.path}', '${v.name.replace('.mp4','')}', '', [], 'private', null)">▲ Upload</button>
+      `;
+      list.appendChild(div);
+    });
+  } catch {
+    document.getElementById('videoList').innerHTML = '<p style="color:var(--muted);font-size:12px">Could not connect to server.</p>';
+  }
+}
+
+function resetForm() {
+  ['topic','script','vtitle','tags','description'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('imgPreview').innerHTML = '';
+  document.getElementById('resultBox').style.display = 'none';
+  document.getElementById('btnUpload').disabled = true;
+  document.getElementById('logTerm').innerHTML = '';
+  uploadedImages = [];
+  lastResult = null;
+  ['script','images','voice','subs','video','thumb'].forEach(id => ps(id, 'waiting', 'Waiting'));
+}
+
+const delay = ms => new Promise(r => setTimeout(r, ms));
+</script>
+</body>
+</html>

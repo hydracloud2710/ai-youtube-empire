@@ -1,0 +1,16 @@
+# AutoTube Empire Engine — Python Dependencies
+flask==3.0.3
+flask-cors==4.0.1
+gunicorn==22.0.0
+python-dotenv==1.0.1
+anthropic==0.28.0
+openai==1.30.0
+gtts==2.5.1
+requests==2.32.3
+Pillow==10.3.0
+pytrends==4.9.2
+celery==5.4.0
+redis==5.0.4
+google-auth==2.29.0
+google-auth-oauthlib==1.2.0
+google-api-python-client==2.129.0

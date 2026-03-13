@@ -28,7 +28,6 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent))
 
 from ai_script     import generate_script
-from image_fetcher import fetch_images
 from subtitle_gen  import generate_srt, get_audio_duration
 from thumbnail_gen import create_thumbnail
 from voice_gen     import generate_voice
